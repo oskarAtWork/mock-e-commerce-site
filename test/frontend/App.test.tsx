@@ -19,12 +19,17 @@ vi.mock('../../src/frontend/src/hooks/useProducts');
 vi.mock('../../src/frontend/src/api');
 
 import { useProducts } from '../../src/frontend/src/hooks/useProducts';
-import { addToCart } from '../../src/frontend/src/api';
+import { addToCart, fetchCart } from '../../src/frontend/src/api';
 
 const mockedUseProducts = vi.mocked(useProducts);
 const mockedAddToCart = vi.mocked(addToCart);
+const mockedFetchCart = vi.mocked(fetchCart);
 
 describe('App', () => {
+  beforeEach(() => {
+    mockedFetchCart.mockResolvedValue([]);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -101,5 +106,32 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: /add test headphones to cart/i }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('Failed to add item to cart.');
+  });
+
+  it('cartItemCount is 0 when cartItems is empty', () => {
+    mockedUseProducts.mockReturnValue({ products: [], loading: false, error: null });
+
+    render(<App />);
+
+    expect(screen.getByRole('button', { name: /shopping cart with 0 items/i })).toBeInTheDocument();
+  });
+
+  it('cartItemCount reflects sum of quantities returned by fetchCart', async () => {
+    mockedUseProducts.mockReturnValue({ products: mockProducts, loading: false, error: null });
+    mockedAddToCart.mockResolvedValue({
+      productId: 1,
+      productName: 'Test Headphones',
+      unitPrice: 79.99,
+      quantity: 1,
+      totalPrice: 79.99,
+    });
+    mockedFetchCart.mockResolvedValue([
+      { productId: 1, productName: 'Test Headphones', unitPrice: 79.99, quantity: 3, totalPrice: 239.97 },
+    ]);
+
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: /add test headphones to cart/i }));
+
+    expect(await screen.findByRole('button', { name: /shopping cart with 3 items/i })).toBeInTheDocument();
   });
 });
