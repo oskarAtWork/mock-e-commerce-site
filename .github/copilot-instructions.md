@@ -45,8 +45,18 @@ Mock e-commerce site used for coding exercises. Full-stack monorepo:
 - **`Product`**: `Id`, `Name`, `Description`, `Price` (decimal), `Category`, `Stock` (int), `ImageUrl`
 - **`CartItem`**: `ProductId`, `ProductName`, `UnitPrice` (decimal), `Quantity` (int), computed `TotalPrice`
 
+### Product Catalog (MockProductService — 5 hardcoded products)
+
+| Id | Name | Price | Category | Stock |
+|----|------|-------|----------|-------|
+| 1 | Wireless Headphones | $79.99 | Electronics | 25 |
+| 2 | Running Shoes | $59.99 | Footwear | 40 |
+| 3 | Water Bottle | $24.99 | Accessories | 100 |
+| 4 | Mechanical Keyboard | $109.99 | Electronics | 15 |
+| 5 | Yoga Mat | $34.99 | Fitness | 60 |
+
 ### Services
-- **`IProductService`** / **`MockProductService`**: Returns a static list of 5 hardcoded products; registered as Singleton
+- **`IProductService`** / **`MockProductService`**: Returns the static list above; registered as Singleton
 - **`ICartService`** / **`InMemoryCartService`**: Thread-safe in-memory cart using `Lock`; registered as Singleton; **all methods currently throw `NotImplementedException`** — this is intentional, meant to be implemented as an exercise
 
 ### Endpoints
