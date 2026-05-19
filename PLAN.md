@@ -34,9 +34,9 @@
 **2.1 — Implement existing cart endpoint handlers**
 - `GetCart`: call `cartService.GetAll()`, return `TypedResults.Ok(items)`.
 - `AddToCart`:
-  - If `request.Quantity < 1` → `TypedResults.ValidationProblem(new Dictionary<string,string[]> { ["quantity"] = ["Quantity must be at least 1."] })`.
+  - If `request.Quantity < 1` (covers zero and negatives) → `TypedResults.ValidationProblem(new Dictionary<string,string[]> { ["quantity"] = ["Quantity must be at least 1."] })` → `400`.
   - If product not found → `TypedResults.NotFound("Product not found")`.
-  - Compute `newTotal = (existingItem?.Quantity ?? 0) + request.Quantity`; if `newTotal > 5` → `TypedResults.ValidationProblem(new Dictionary<string,string[]> { ["quantity"] = ["Cannot exceed 5 of any single item."] })`.
+  - Compute `newTotal = (existingItem?.Quantity ?? 0) + request.Quantity`; if `newTotal > 5` (exactly 5 is allowed) → `TypedResults.ValidationProblem(new Dictionary<string,string[]> { ["quantity"] = ["Cannot exceed 5 of any single item."] })` → `400`.
   - Call `cartService.Add(new CartItem { ProductId = ..., ProductName = product.Name, UnitPrice = product.Price, Quantity = request.Quantity })`.
   - Return `TypedResults.Created($"/api/cart/{productId}", item)` if new; `TypedResults.Ok(item)` if updated.
 - `RemoveFromCart`: if `cartService.Remove(productId)` returns `false` → `TypedResults.NotFound()`; else `TypedResults.NoContent()`.
@@ -45,8 +45,8 @@
 
 **2.2 — Add `PUT /api/cart/{productId}` endpoint**
 - Return type: `Results<Ok<CartItem>, NotFound, NotFound<string>, ValidationProblem>`.
-- If `request.Quantity < 1` → `TypedResults.ValidationProblem(new Dictionary<string,string[]> { ["quantity"] = ["Quantity must be at least 1."] })`.
-- If `request.Quantity > 5` → `TypedResults.ValidationProblem(new Dictionary<string,string[]> { ["quantity"] = ["Quantity cannot exceed 5."] })`.
+- If `request.Quantity < 1` (zero or negative) → `TypedResults.ValidationProblem(new Dictionary<string,string[]> { ["quantity"] = ["Quantity must be at least 1."] })` → `400`.
+- If `request.Quantity > 5` → `TypedResults.ValidationProblem(new Dictionary<string,string[]> { ["quantity"] = ["Quantity cannot exceed 5."] })` → `400`. **Quantity == 5 must pass this check.**
 - If product not found in catalogue → `TypedResults.NotFound("Product not found")`.
 - Call `cartService.Update(productId, request.Quantity)`; if result is `null` (item not in cart) → `TypedResults.NotFound()`.
 - Otherwise → `TypedResults.Ok(updatedItem)`.
@@ -73,9 +73,16 @@
 - `POST /api/cart` with valid product returns `201` and correct `CartItem`.
 - `POST /api/cart` with same product again returns `200` with incremented quantity.
 - `POST /api/cart` with unknown product returns `404`.
-- `POST /api/cart` with quantity that would exceed 5 returns `422`.
+- `POST /api/cart` with `quantity=0` returns `400`.
+- `POST /api/cart` with `quantity=-1` returns `400`.
+- `POST /api/cart` with `quantity=5` (first add) returns `201` — boundary must be accepted.
+- `POST /api/cart` with quantity that would push total above 5 returns `400`.
+- `POST /api/cart` with quantity that results in exactly 5 total returns `201` or `200` — boundary must be accepted.
 - `PUT /api/cart/{productId}` with valid data returns `200` and updated item.
-- `PUT /api/cart/{productId}` with quantity `> 5` returns `422`.
+- `PUT /api/cart/{productId}` with `quantity=5` returns `200` — boundary must be accepted.
+- `PUT /api/cart/{productId}` with `quantity=6` returns `400`.
+- `PUT /api/cart/{productId}` with `quantity=0` returns `400`.
+- `PUT /api/cart/{productId}` with `quantity=-1` returns `400`.
 - `PUT /api/cart/{productId}` for item not in cart returns `404`.
 - `PUT /api/cart/{productId}` for unknown product returns `404`.
 - `DELETE /api/cart/{productId}` returns `204`; subsequent GET omits item.
@@ -148,9 +155,11 @@
 - Render `<CartPanel>` with appropriate props.
 - Pass `onCartClick={handleOpenCart}` to `<Header>`.
 
-**6.2 — Update `Header` component**
-- Accept `onCartClick: () => void` prop.
-- Wire it to the `onClick` of the existing cart button.
+**6.2 — Wire the existing cart icon button in `Header` to open the cart panel**
+- The cart button already exists in `Header.tsx` with class `header__cart-button`. It currently has no `onClick` handler.
+- Add `onCartClick: () => void` to `HeaderProps`.
+- Add `onClick={onCartClick}` to the existing `<button className="header__cart-button">` element.
+- In `App.tsx`, pass `onCartClick={handleOpenCart}` to `<Header>`.
 - File: `src/frontend/src/components/Header/Header.tsx`
 
 ---

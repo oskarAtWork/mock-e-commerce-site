@@ -12,10 +12,10 @@ The following points were not fully specified in the feature request and have be
 
 | # | Ambiguity | Decision |
 |---|-----------|----------|
-| 1 | **Max-qty on `PUT` updates** | The 5-item cap applies to the new absolute value. `PUT` with `quantity > 5` → `422`. The cap is not checked against the cart's existing value (since PUT sets, not adds). |
-| 2 | **Increment scenario on `POST`** | `POST` is additive: `newTotal = existingQty + requestedQty`. If `newTotal > 5` the request is rejected with `422`, even if `requestedQty` alone is ≤ 5. Example: cart has 4 of product 1; `POST {productId:1, quantity:2}` → `422`. |
+| 1 | **Max-qty on `PUT` updates** | The 5-item cap applies to the new absolute value. `PUT` with `quantity > 5` → `400`. Quantity of exactly 5 is **valid**. The cap is not checked against the cart's existing value (since PUT sets, not adds). |
+| 2 | **Increment scenario on `POST`** | `POST` is additive: `newTotal = existingQty + requestedQty`. If `newTotal > 5` the request is rejected with `400`, even if `requestedQty` alone is ≤ 5. Example: cart has 4 of product 1; `POST {productId:1, quantity:2}` → `400`. |
 | 3 | **`PUT` semantics** | `PUT` is an **absolute set**, not a delta increment. Sending `quantity: 3` means the cart item will have exactly 3 units regardless of the prior value. |
-| 4 | **Error response format** | All validation failures return `422 Unprocessable Entity` with an ASP.NET Core `ValidationProblem` body (RFC 9110 / `application/problem+json`). Example: `{ "type": "https://tools.ietf.org/html/rfc9110#section-15.5.22", "title": "One or more validation errors occurred.", "status": 422, "errors": { "quantity": ["Quantity must be between 1 and 5."] } }` |
+| 4 | **Error response format** | All validation failures return `400 Bad Request` with an ASP.NET Core `ValidationProblem` body (`application/problem+json`). This is the default status code produced by `TypedResults.ValidationProblem`. Example: `{ "title": "One or more validation errors occurred.", "status": 400, "errors": { "quantity": ["Quantity must be between 1 and 5."] } }` |
 | 5 | **UI approach** | The cart is shown as a slide-in side panel (drawer) anchored to the right side of the viewport, toggled by the existing cart icon button in `Header`. It is not a separate route/page. |
 | 6 | **`PUT` on an item not in the cart** | If `productId` is valid in the catalogue but the product has not been added to the cart yet, `PUT` returns `404 Not Found`. `PUT` cannot create new cart entries — use `POST` for that. |
 
@@ -24,9 +24,10 @@ The following points were not fully specified in the feature request and have be
 ## Business Rules
 
 1. **Maximum quantity per item**: No single product may have a quantity greater than 5 in the cart at any time.
-   - Attempts to `POST /api/cart` that would push a product's total quantity above 5 must be rejected with `422 Unprocessable Entity`.
-   - Attempts to `PUT /api/cart/{productId}` with a quantity above 5 must similarly be rejected with `422 Unprocessable Entity`.
-   - A quantity of 0 or below is invalid (must be ≥ 1).
+   - Valid quantity range is **1 to 5 inclusive**. A quantity of exactly 5 is accepted.
+   - A quantity of 0 or any negative number is rejected with `400 Bad Request`.
+   - Attempts to `POST /api/cart` that would push a product's total quantity above 5 must be rejected with `400 Bad Request`.
+   - Attempts to `PUT /api/cart/{productId}` with a quantity above 5 must be rejected with `400 Bad Request`.
 2. **Product must exist**: Adding or updating a cart item for an unknown product ID must return `404 Not Found`.
 3. **Cart is shared / session-less**: The existing singleton `InMemoryCartService` is retained; all users share one cart (no auth scope required for this exercise).
 
@@ -39,8 +40,8 @@ The following points were not fully specified in the feature request and have be
 | Method | Route | Description | Success | Error codes |
 |--------|-------|-------------|---------|-------------|
 | GET | `/api/cart` | Return all cart items | `200 OK` — array of `CartItem` | — |
-| POST | `/api/cart` | Add product or increment quantity | `201 Created` (new item) / `200 OK` (updated) — `CartItem` | `404`, `422` |
-| PUT | `/api/cart/{productId}` | Set absolute quantity for an existing cart item | `200 OK` — `CartItem` | `404`, `422` |
+| POST | `/api/cart` | Add product or increment quantity | `201 Created` (new item) / `200 OK` (updated) — `CartItem` | `404`, `400` |
+| PUT | `/api/cart/{productId}` | Set absolute quantity for an existing cart item | `200 OK` — `CartItem` | `404`, `400` |
 | DELETE | `/api/cart/{productId}` | Remove a single item | `204 No Content` | `404` |
 | DELETE | `/api/cart` | Clear the entire cart | `204 No Content` | — |
 
@@ -54,8 +55,8 @@ record UpdateCartItemRequest(int Quantity);
 
 Checks are applied in this exact order:
 
-1. If `Quantity < 1` → `422` with `errors: { "quantity": ["Quantity must be at least 1."] }`.
-2. If `Quantity > 5` → `422` with `errors: { "quantity": ["Quantity cannot exceed 5."] }`.
+1. If `Quantity < 1` (zero or negative) → `400 Bad Request` with `errors: { "quantity": ["Quantity must be at least 1."] }`.
+2. If `Quantity > 5` → `400 Bad Request` with `errors: { "quantity": ["Quantity cannot exceed 5."] }`. **Quantity of exactly 5 is valid and must not be rejected.**
 3. If product ID does not exist in the catalogue → `404 Not Found` with body `"Product not found"`.
 4. If product ID is valid but not present in the cart → `404 Not Found` (empty body).
 5. Otherwise set the item's quantity to the requested value → `200 OK` with the updated `CartItem`.
@@ -64,22 +65,21 @@ Checks are applied in this exact order:
 
 Checks are applied in this exact order:
 
-1. If `Quantity < 1` → `422` with `errors: { "quantity": ["Quantity must be at least 1."] }`.
+1. If `Quantity < 1` (zero or negative) → `400 Bad Request` with `errors: { "quantity": ["Quantity must be at least 1."] }`.
 2. If product ID does not exist in the catalogue → `404 Not Found` with body `"Product not found"`.
 3. Compute `newTotal = existingQuantityInCart + request.Quantity` (0 if item not yet in cart).
-4. If `newTotal > 5` → `422` with `errors: { "quantity": ["Cannot exceed 5 of any single item."] }`.
+4. If `newTotal > 5` → `400 Bad Request` with `errors: { "quantity": ["Cannot exceed 5 of any single item."] }`. **A newTotal of exactly 5 is valid.**
 5. If item was not in the cart → insert it, return `201 Created` with the new `CartItem`.
 6. If item was already in the cart → increment its quantity by `request.Quantity`, return `200 OK` with the updated `CartItem`.
 
 ### Error response format
 
-All `422` responses use `application/problem+json` via `TypedResults.ValidationProblem`:
+All validation failures use `TypedResults.ValidationProblem(...)`, which returns `400 Bad Request` by default in ASP.NET Core:
 
 ```json
 {
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.22",
   "title": "One or more validation errors occurred.",
-  "status": 422,
+  "status": 400,
   "errors": {
     "quantity": ["Quantity must be between 1 and 5."]
   }
